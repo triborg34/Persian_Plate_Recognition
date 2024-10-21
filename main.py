@@ -3,12 +3,13 @@ import cv2
 import math
 import time
 import datetime
+from crop_and_licance_saver import crop_and_save_plate
+import torch
 import warnings
-warnings.filterwarnings("ignore", category=FutureWarning)
 
+warnings.filterwarnings("ignore", category=FutureWarning)
 # Get the current timestamp for output names
 timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-file_name = f'output_{timestamp}.jpg'
 classnames = ['car', 'plate']
 charclassnames = ['0', '9', 'b', 'd', 'ein', 'ein', 'g', 'gh', 'h', 'n', 's', '1', 'malul', 'n', 's', 'sad', 't', 'ta', 'v', 'y', '2', '3', '4', '5', '6', '7', '8']
 
@@ -16,21 +17,20 @@ charclassnames = ['0', '9', 'b', 'd', 'ein', 'ein', 'g', 'gh', 'h', 'n', 's', '1
 source = "rtsp://admin:admin@192.168.1.88:554/substream"  # Replace with your RTSP URL
 
 # Load YOLOv8 models for object and character detection
-
 model_object = YOLO("weights/best.pt")
 model_char = YOLO("weights/yolov8n_char_new.pt")
 
 cap = cv2.VideoCapture(source)
-cap.set(cv2.CAP_PROP_BUFFERSIZE, 100)
-cap.set(cv2.CAP_PROP_POS_FRAMES, 10)
+cap.set(cv2.CAP_PROP_BUFFERSIZE, 2000)
+cap.set(cv2.CAP_PROP_POS_FRAMES, 30)
 
 # Check if the stream is opened successfully
 if not cap.isOpened():
     print("Error: Could not open the RTSP stream.")
     exit()
 
-# Define the output video properties (optional if saving images)
-output_imagename = f'output_{timestamp}.jpg'
+# Define the output folder for saving cropped plates
+output_folder = 'output'
 
 while cap.isOpened():
     success, img = cap.read()
@@ -48,17 +48,12 @@ while cap.isOpened():
                 confs = math.ceil((box.conf[0] * 100)) / 100
                 cls_names = int(box.cls[0])
 
-                if cls_names == 1:
-                    cv2.putText(img, f'{confs}', (max(40, x2 + 5), max(40, y2 + 5)), fontFace=cv2.FONT_HERSHEY_TRIPLEX, fontScale=0.5, color=(0, 20, 255), thickness=1, lineType=cv2.LINE_AA)
-                elif cls_names == 0:
-                    cv2.putText(img, f'{confs}', (max(40, x1), max(40, y1)), fontFace=cv2.FONT_HERSHEY_TRIPLEX, fontScale=0.6, color=(0, 20, 255), thickness=1, lineType=cv2.LINE_AA)
-
-                # Check for plates and recognize characters
-                if cls_names == 1:
-                    char_display = []
-                    plate_img = img[y1:y2, x1:x2]  # Crop plate from frame
+                if cls_names == 1 and confs >= 0.9:  # Only save when confidence is above 0.8
+                    # Detect characters with the YOLO model for plates
+                    plate_img = img[y1:y2, x1:x2]  # Crop the plate image
                     plate_output = model_char(plate_img, conf=0.3)
 
+                    # Extract bounding box and class names for characters
                     bbox = plate_output[0].boxes.xyxy
                     cls = plate_output[0].boxes.cls
 
@@ -68,16 +63,21 @@ while cap.isOpened():
                     dictionary = list(zip(keys, values))
                     sorted_list = sorted(dictionary, key=lambda x: x[1])
 
-                    # Convert to string
+                    # Convert characters to string
+                    char_display = []
                     for i in sorted_list:
                         char_class = i[0]
                         char_display.append(charclassnames[char_class])
 
-                    char_result = 'Plate: ' + ''.join(char_display)
+                    plate_number = ''.join(char_display)
 
+                    # Use the crop_and_save_plate function to save the car and plate images
+                    crop_and_save_plate(img, box, plate_number, output_folder)
+
+                    # Display the detected plate characters on the image
                     if len(char_display) == 8:
                         cv2.line(img, (max(40, x1 - 25), max(40, y1 - 10)), (x2 + 25, y1 - 10), (0, 0, 0), 20, lineType=cv2.LINE_AA)
-                        cv2.putText(img, char_result, (max(40, x1 - 15), max(40, y1 - 5)), fontFace=cv2.FONT_HERSHEY_TRIPLEX, fontScale=0.5, color=(10, 50, 255), thickness=1, lineType=cv2.LINE_AA)
+                        cv2.putText(img, plate_number, (max(40, x1 - 15), max(40, y1 - 5)), fontFace=cv2.FONT_HERSHEY_TRIPLEX, fontScale=0.5, color=(10, 50, 255), thickness=1, lineType=cv2.LINE_AA)
 
         tock = time.time()
         elapsed_time = tock - tick
@@ -88,9 +88,6 @@ while cap.isOpened():
 
         # Show detection
         cv2.imshow('detection', img)
-
-        # Save the frame as an image
-        cv2.imwrite('output/' + output_imagename, img)
 
         # Break loop on 'q' key press
         if cv2.waitKey(1) & 0xFF == ord("q"):
