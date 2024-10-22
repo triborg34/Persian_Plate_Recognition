@@ -4,10 +4,19 @@ import math
 import time
 import datetime
 from crop_and_licance_saver import crop_and_save_plate
-import torch
 import warnings
 
 warnings.filterwarnings("ignore", category=FutureWarning)
+
+# Enable OpenCL in OpenCV
+cv2.ocl.setUseOpenCL(True)
+
+# Check if OpenCL is available
+if cv2.ocl.haveOpenCL():
+    print("OpenCL is available and enabled in OpenCV")
+else:
+    print("OpenCL is not available. Using CPU instead.")
+
 # Get the current timestamp for output names
 timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
 classnames = ['car', 'plate']
@@ -20,7 +29,7 @@ source = "rtsp://admin:admin@192.168.1.88:554/substream"  # Replace with your RT
 model_object = YOLO("weights/best.pt")
 model_char = YOLO("weights/yolov8n_char_new.pt")
 
-cap = cv2.VideoCapture(source)
+cap = cv2.VideoCapture(0)
 cap.set(cv2.CAP_PROP_BUFFERSIZE, 2000)
 cap.set(cv2.CAP_PROP_POS_FRAMES, 30)
 
@@ -37,8 +46,8 @@ while cap.isOpened():
     if success:
         tick = time.time()
 
-        # Detect objects with YOLO model
-        output = model_object(img, show=False, conf=0.7, stream=True)
+        # Perform YOLO inference on the captured frame (img)
+        output = model_object.predict(img)  # Pass the frame to YOLO model
 
         for result in output:
             for box in result.boxes:
