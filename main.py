@@ -5,17 +5,21 @@ import time
 import datetime
 from crop_and_licance_saver import crop_and_save_plate
 import warnings
+import torch
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
-# Enable OpenCL in OpenCV
-cv2.ocl.setUseOpenCL(True)
-
-# Check if OpenCL is available
-if cv2.ocl.haveOpenCL():
-    print("OpenCL is available and enabled in OpenCV")
+# Device selection: Check for CUDA, OpenCL, or CPU
+if torch.cuda.is_available():
+    device = 'cuda'
+    print("CUDA is available. Using GPU for inference.")
+elif cv2.ocl.haveOpenCL():
+    device = 'cpu'  # PyTorch inference will use CPU, OpenCV uses OpenCL
+    cv2.ocl.setUseOpenCL(True)
+    print("OpenCL is available. Using OpenCL for OpenCV operations, but inference will be on CPU.")
 else:
-    print("OpenCL is not available. Using CPU instead.")
+    device = 'cpu'
+    print("Neither CUDA nor OpenCL is available. Using CPU for inference.")
 
 # Get the current timestamp for output names
 timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
@@ -26,10 +30,10 @@ charclassnames = ['0', '9', 'b', 'd', 'ein', 'ein', 'g', 'gh', 'h', 'n', 's', '1
 source = "rtsp://admin:admin@192.168.1.88:554/substream"  # Replace with your RTSP URL
 
 # Load YOLOv8 models for object and character detection
-model_object = YOLO("weights/best.pt")
-model_char = YOLO("weights/yolov8n_char_new.pt")
+model_object = YOLO("weights/best.pt")  # Model is automatically loaded to the right device
+model_char = YOLO("weights/yolov8n_char_new.pt")  # Model is automatically loaded to the right device
 
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture(source)
 cap.set(cv2.CAP_PROP_BUFFERSIZE, 2000)
 cap.set(cv2.CAP_PROP_POS_FRAMES, 30)
 
@@ -47,7 +51,7 @@ while cap.isOpened():
         tick = time.time()
 
         # Perform YOLO inference on the captured frame (img)
-        output = model_object.predict(img)  # Pass the frame to YOLO model
+        output = model_object.predict(img)  # Run inference
 
         for result in output:
             for box in result.boxes:
@@ -60,7 +64,7 @@ while cap.isOpened():
                 if cls_names == 1 and confs >= 0.9:  # Only save when confidence is above 0.8
                     # Detect characters with the YOLO model for plates
                     plate_img = img[y1:y2, x1:x2]  # Crop the plate image
-                    plate_output = model_char(plate_img, conf=0.3)
+                    plate_output = model_char.predict(plate_img, conf=0.3)  # Perform character detection
 
                     # Extract bounding box and class names for characters
                     bbox = plate_output[0].boxes.xyxy
