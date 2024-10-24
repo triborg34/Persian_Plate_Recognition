@@ -45,7 +45,12 @@ if not cap.isOpened():
 # Define the output folder for saving cropped plates
 output_folder = 'output'
 
-while cap.isOpened():
+# Retry parameters
+retry_delay = 5  # seconds to wait before retrying
+max_retries = 5  # maximum number of retries
+retry_count = 0  # retry counter
+
+while retry_count < max_retries:
     success, img = cap.read()
     if success:
         tick = time.time()
@@ -85,10 +90,11 @@ while cap.isOpened():
                     plate_number = ''.join(char_display)
 
                     # Use the crop_and_save_plate function to save the car and plate images
-                    crop_and_save_plate(img, box, plate_number, output_folder)
+                    if len(plate_number) >= 8:
+                        crop_and_save_plate(img, box, plate_number, output_folder)
 
                     # Display the detected plate characters on the image
-                    if len(char_display) == 8:
+                    if len(char_display) >= 8:
                         cv2.line(img, (max(40, x1 - 25), max(40, y1 - 10)), (x2 + 25, y1 - 10), (0, 0, 0), 20, lineType=cv2.LINE_AA)
                         cv2.putText(img, plate_number, (max(40, x1 - 15), max(40, y1 - 5)), fontFace=cv2.FONT_HERSHEY_TRIPLEX, fontScale=0.5, color=(10, 50, 255), thickness=1, lineType=cv2.LINE_AA)
 
@@ -105,9 +111,17 @@ while cap.isOpened():
         # Break loop on 'q' key press
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break
+
+        # Reset retry count after successful read
+        retry_count = 0
     else:
-        print("Error: Could not get any frames from the RTSP stream.")
-        break
+        retry_count += 1
+        print(f"Error: Could not get any frames from the RTSP stream. Retrying in {retry_delay} seconds... (Attempt {retry_count} of {max_retries})")
+        time.sleep(retry_delay)
+
+        if retry_count >= max_retries:
+            print("Max retries reached. Exiting...")
+            break
 
 cap.release()
 cv2.destroyAllWindows()
