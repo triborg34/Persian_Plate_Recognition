@@ -33,7 +33,7 @@ source = "rtsp://admin:admin@192.168.1.88:554/substream"  # Replace with your RT
 model_object = YOLO("weights/best.pt")  # Model is automatically loaded to the right device
 model_char = YOLO("weights/yolov8n_char_new.pt")  # Model is automatically loaded to the right device
 
-cap = cv2.VideoCapture(source)
+cap = cv2.VideoCapture(0)
 cap.set(cv2.CAP_PROP_BUFFERSIZE, 2000)
 cap.set(cv2.CAP_PROP_POS_FRAMES, 30)
 
@@ -63,17 +63,25 @@ while retry_count < max_retries:
                 x1, y1, x2, y2 = map(int, box.xyxy[0].cpu().numpy())  # Convert to integers
                 cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
-                confs = math.ceil((box.conf[0] * 100)) / 100
+                # Print car confidence
+                car_conf = math.ceil((box.conf[0] * 100)) / 100
                 cls_names = int(box.cls[0])
+                print(f"Car detected with confidence: {car_conf}")
 
-                if cls_names == 1 and confs >= 0.9:  # Only save when confidence is above 0.8
+                if cls_names == 1 and car_conf >= 0.9:  # Only proceed when confidence is above 0.9
                     # Detect characters with the YOLO model for plates
                     plate_img = img[y1:y2, x1:x2]  # Crop the plate image
                     plate_output = model_char.predict(plate_img, conf=0.3)  # Perform character detection
 
-                    # Extract bounding box and class names for characters
+                    # Extract bounding box, class names, and confidences for characters
                     bbox = plate_output[0].boxes.xyxy
                     cls = plate_output[0].boxes.cls
+                    confs_char = plate_output[0].boxes.conf  # Extract character confidences
+                    
+                    # Print the confidence for each detected character
+                    print("Character confidences:")
+                    for confidence in confs_char:
+                        print(f"Character detected with confidence: {confidence:.2f}")
 
                     # Sort characters left to right
                     keys = cls.cpu().numpy().astype(int)
@@ -91,7 +99,7 @@ while retry_count < max_retries:
 
                     # Use the crop_and_save_plate function to save the car and plate images
                     if len(plate_number) >= 8:
-                        crop_and_save_plate(img, box, plate_number, output_folder)
+                        crop_and_save_plate(img, box, plate_number,confidence, output_folder)
 
                     # Display the detected plate characters on the image
                     if len(char_display) >= 8:
