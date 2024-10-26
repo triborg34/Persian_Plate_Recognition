@@ -8,7 +8,8 @@ import warnings
 import torch
 import queue
 import threading
-
+import logging
+logging.getLogger("ultralytics").setLevel(logging.ERROR)
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 # Device selection: Check for CUDA, OpenCL, or CPU
