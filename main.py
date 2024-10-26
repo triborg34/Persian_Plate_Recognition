@@ -33,12 +33,12 @@ classnames = ['car', 'plate']
 charclassnames = ['0', '9', 'b', 'd', 'ein', 'ein', 'g', 'gh', 'h', 'n', 's', '1', 'malul', 'n', 's', 'sad', 't', 'ta', 'v', 'y', '2', '3', '4', '5', '6', '7', '8']
 
 # Set the RTSP stream source and initialize YOLO models
-source = "rtsp://admin:admin@192.168.1.88:554/substream"
+source = "rtsp://admin:admin@192.168.1.88:554/mainstream"
 model_object = YOLO("weights/best.pt")
 model_char = YOLO("weights/yolov8n_char_new.pt")
 cap = cv2.VideoCapture(source)
-cap.set(cv2.CAP_PROP_BUFFERSIZE, 2000)
-cap.set(cv2.CAP_PROP_FPS, 25)
+cap.set(cv2.CAP_PROP_BUFFERSIZE, 0)
+cap.set(cv2.CAP_PROP_FPS, 30)
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
 
@@ -115,6 +115,7 @@ async def video_stream():
 
             # Display frame locally
             cv2.imshow("Detection", img)
+            cv2.resizeWindow("Detection", 800, 600)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
 
