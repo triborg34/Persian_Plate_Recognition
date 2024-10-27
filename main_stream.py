@@ -8,35 +8,26 @@ import warnings
 import torch
 import queue
 import threading
-import logging
 import asyncio
 from fastapi import FastAPI, WebSocket
 import uvicorn
-
+import logging
 # Initialize FastAPI app
 app = FastAPI()
-
-# Set up the logger
-logger = logging.getLogger("main_stream_logger")
-logger.setLevel(logging.DEBUG)
-handler = logging.StreamHandler()
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-handler.setFormatter(formatter)
-logger.addHandler(handler)
-
+logging.getLogger("ultralytics").setLevel(logging.ERROR)
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 # Device selection
 if torch.cuda.is_available():
     device = 'cuda'
-    logger.info("CUDA is available. Using GPU for inference.")
+    print("CUDA is available. Using GPU for inference.")
 elif cv2.ocl.haveOpenCL():
-    device = 'cpu'
+    device = 'cpu'  # PyTorch inference will use CPU, OpenCV uses OpenCL
     cv2.ocl.setUseOpenCL(True)
-    logger.info("OpenCL is available. Using OpenCL for OpenCV operations, but inference will be on CPU.")
+    print("OpenCL is available. Using OpenCL for OpenCV operations, but inference will be on CPU.")
 else:
     device = 'cpu'
-    logger.info("Neither CUDA nor OpenCL is available. Using CPU for inference.")
+    print("Neither CUDA nor OpenCL is available. Using CPU for inference.")
 
 # Set RTSP stream source
 source = "rtsp://admin:admin@192.168.1.88:554/substream"  # Replace with your RTSP URL
@@ -48,18 +39,19 @@ model_char = YOLO("weights/yolov8n_char_new.pt")
 cap = cv2.VideoCapture(source)
 cap.set(cv2.CAP_PROP_BUFFERSIZE, 2000)
 cap.set(cv2.CAP_PROP_POS_FRAMES, 30)
-cap.set(cv2.CAP_PROP_FPS, 25)
+cap.set(cv2.CAP_PROP_FPS, 5)
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
 
 # Check if stream is opened
 if not cap.isOpened():
-    logger.error("Error: Could not open the RTSP stream.")
+    print("Error: Could not open the RTSP stream.")
     exit()
 
 # Initialize frame buffer and car ID counter
 buffer = queue.Queue(maxsize=10)
 car_id_counter = 1  # Initialize car ID counter
+output_folder = 'output'  # Define output folder
 
 # Queue to hold processed frames for WebSocket
 frame_queue = queue.Queue(maxsize=10)
@@ -81,13 +73,10 @@ time.sleep(10)  # Allow buffer to fill
 # Main processing function
 def process_video():
     global car_id_counter
-    retry_delay = 5
-    max_retries = 5
-    retry_count = 0
+    charclassnames = ['0', '9', 'b', 'd', 'ein', 'ein', 'g', 'gh', 'h', 'n', 's', '1', 'malul', 'n', 's', 'sad', 't', 'ta', 'v', 'y', '2', '3', '4', '5', '6', '7', '8']
 
-    while retry_count < max_retries:
+    while True:
         if buffer.empty():
-            logger.debug("Buffer is empty, waiting...")
             time.sleep(0.5)
             continue
 
@@ -104,44 +93,66 @@ def process_video():
 
                 car_conf = math.ceil((box.conf[0] * 100)) / 100
                 cls_names = int(box.cls[0])
+                print(f"Car ID {car_id_counter} detected with confidence: {car_conf}")
 
                 if cls_names == 1 and car_conf >= 0.9:
                     # Crop plate image and perform character detection
                     plate_img = img[y1:y2, x1:x2]
                     plate_output = model_char.predict(plate_img, conf=0.3)
 
-                    # Extract character information
-                    char_classes = [int(cls) for cls in plate_output[0].boxes.cls.cpu().numpy()]
-                    char_positions = plate_output[0].boxes.xyxy[:, 0].cpu().numpy()
-                    
-                    sorted_chars = sorted(zip(char_classes, char_positions), key=lambda x: x[1])
-                    plate_number = ''.join([str(char_class) for char_class, _ in sorted_chars])
+                    # Extract bounding box, class names, and confidences for characters
+                    bbox = plate_output[0].boxes.xyxy
+                    cls = plate_output[0].boxes.cls
+                    confs_char = plate_output[0].boxes.conf
 
-                    # Display detected plate characters on the image
-                    cv2.putText(img, f"Car ID: {car_id_counter} | Plate: {plate_number}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-                    crop_and_save_plate(img, box, plate_number, car_conf, 'output')
+                    # Print character confidences
+                    print("Character confidences:")
+                    for confidence in confs_char:
+                        print(f"Character detected with confidence: {confidence:.2f}")
+
+                    # Sort characters left to right
+                    keys = cls.cpu().numpy().astype(int)
+                    values = bbox[:, 0].cpu().numpy().astype(int)
+                    dictionary = list(zip(keys, values))
+                    sorted_list = sorted(dictionary, key=lambda x: x[1])
+
+                    # Convert characters to string
+                    char_display = []
+                    for i in sorted_list:
+                        char_class = i[0]
+                        char_display.append(charclassnames[char_class])
+
+                    plate_number = ''.join(char_display)
+
+                    # Use the crop_and_save_plate function to save the car and plate images with car ID
+                    if len(plate_number) >= 8 and confidence > 0.6:
+                        plate_confidence = box.conf[0].item()  # Assuming plate_conf is the detection confidence of the plate
+                        crop_and_save_plate(img, box, plate_number, plate_confidence, output_folder)
+
+                    cv2.putText(img, f"Car ID: {car_id_counter} | Plate: {plate_number}", 
+                                (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
 
                 car_id_counter += 1
 
+        # FPS calculation with zero check for elapsed_time
         tock = time.time()
         elapsed_time = tock - tick
-        fps_text = "FPS: {:.2f}".format(1 / elapsed_time)
-        text_size, _ = cv2.getTextSize(fps_text, cv2.FONT_HERSHEY_SIMPLEX, 1, 2)
-        fps_text_loc = (img.shape[1] - text_size[0] - 10, text_size[1] + 10)
-        cv2.putText(img, fps_text, fps_text_loc, fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=1, color=(0, 255, 0), thickness=2)
+        if elapsed_time > 0:
+            fps_text = "FPS: {:.2f}".format(1 / elapsed_time)
+            text_size, _ = cv2.getTextSize(fps_text, cv2.FONT_HERSHEY_SIMPLEX, 1, 2)
+            fps_text_loc = (img.shape[1] - text_size[0] - 10, text_size[1] + 10)
+            cv2.putText(img, fps_text, fps_text_loc, fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=1, 
+                        color=(0, 255, 0), thickness=2)
 
         # Enqueue processed frame for streaming
         if not frame_queue.full():
             frame_queue.put(img)
-            logger.debug("Frame added to queue for streaming")
 
         # Show detection results (optional)
         cv2.imshow('detection', img)
 
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break
-
-        retry_count = 0  # Reset retry count on successful read
 
     cap.release()
     cv2.destroyAllWindows()
@@ -153,18 +164,15 @@ threading.Thread(target=process_video, daemon=True).start()
 @app.websocket("/video")
 async def video_stream(websocket: WebSocket):
     await websocket.accept()
-    logger.info("WebSocket connection accepted from client")
     
     try:
         while True:
             if frame_queue.empty():
-                logger.debug("Frame queue is empty, waiting...")
                 await asyncio.sleep(0.01)
                 continue
 
             # Get the next processed frame from the queue
             frame = frame_queue.get()
-            logger.debug("Sending frame to WebSocket client")
 
             # Encode the frame to JPEG format
             _, buffer = cv2.imencode('.jpg', frame)
@@ -173,12 +181,10 @@ async def video_stream(websocket: WebSocket):
             await websocket.send_bytes(buffer.tobytes())
     
     except Exception as e:
-        logger.error(f"Error in WebSocket communication: {e}")
+        print(f"Error in WebSocket communication: {e}")
     
     finally:
         await websocket.close()
-        logger.info("WebSocket connection closed")
 
 if __name__ == "__main__":
-    logger.info("Starting Uvicorn server")
     uvicorn.run("main_stream:app", host="0.0.0.0", port=8000)

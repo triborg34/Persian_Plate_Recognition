@@ -38,10 +38,7 @@ model_char = YOLO("weights/yolov8n_char_new.pt")  # Model is automatically loade
 
 cap = cv2.VideoCapture(source)
 cap.set(cv2.CAP_PROP_BUFFERSIZE, 2000)
-cap.set(cv2.CAP_PROP_POS_FRAMES, 30)
-cap.set(cv2.CAP_PROP_FPS, 25)  # Set frame rate to 25 FPS
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)  # Set max width (for Full HD)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)  # Set max height (for Full HD)
+cap.set(cv2.CAP_PROP_POS_FRAMES, 5)
 
 # Check if the stream is opened successfully
 if not cap.isOpened():
