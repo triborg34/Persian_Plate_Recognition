@@ -89,11 +89,17 @@ while retry_count < max_retries:
     for result in output:
         for box in result.boxes:
             x1, y1, x2, y2 = map(int, box.xyxy[0].cpu().numpy())  # Convert to integers
-            cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            
 
             # Print car confidence and car ID
-            car_conf = math.ceil((box.conf[0] * 100)) / 100
+            
             cls_names = int(box.cls[0])
+            if cls_names == 0:  # Car
+                 color = (0, 0, 255)  # Red
+            elif cls_names == 1:  # Plate
+                  color = (255, 0, 0)
+            cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
+            car_conf = math.ceil((box.conf[0] * 100)) / 100
             print(f"Car ID {car_id_counter} detected with confidence: {car_conf}")
 
             if cls_names == 1 and car_conf >= 0.9:  # Only proceed when confidence is above 0.9
