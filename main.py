@@ -37,7 +37,8 @@ model_object = YOLO("weights/best.pt")  # Model is automatically loaded to the r
 model_char = YOLO("weights/yolov8n_char_new.pt")  # Model is automatically loaded to the right device
 
 cap = cv2.VideoCapture(source)
-cap.set(cv2.CAP_PROP_BUFFERSIZE, 2000)
+cap.set(cv2.CAP_PROP_BUFFERSIZE, 0)
+cap.set(cv2.CAP_PROP_FPS, 5)
 cap.set(cv2.CAP_PROP_POS_FRAMES, 5)
 
 # Check if the stream is opened successfully
